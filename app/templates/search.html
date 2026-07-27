@@ -107,27 +107,72 @@
                                 </a>
                             </div>
                             
-                            <div class="form-floating mb-3">
-                                <input type="text" class="form-control" id="tickerinp" placeholder="Ticker Name" name="ticker" autocomplete="on" required>
-                                <label for="tickerinp">Ticker Name</label>
+                            <div class="form-floating mb-3 position-relative">
+                                <input type="text" class="form-control" id="tickerinp" list="stock-suggest" placeholder="例如 贵州茅台 / 茅台 / 600519 / 腾讯" name="ticker" autocomplete="off" required>
+                                <label for="tickerinp">股票代码或名称</label>
+                                <datalist id="stock-suggest"></datalist>
+                                <div id="suggest-box" class="bg-dark border rounded mt-1 w-100" style="display:none; position:absolute; z-index:20; max-height:220px; overflow:auto;"></div>
                             </div>
                             <div class="form-floating mb-4">
-                                <input type="text" class="form-control" id="days" placeholder="Number of days" name="days" autocomplete="on" required>
-                                <label for="days">Number of Days</label>
+                                <input type="text" class="form-control" id="days" placeholder="预测天数 1-365" name="days" autocomplete="on" required>
+                                <label for="days">预测天数</label>
                             </div>
+                            <p class="text-muted small mb-3">
+                                支持输入<strong>股票名称</strong>或代码：贵州茅台、茅台、腾讯、比亚迪、宁德时代<br>
+                                也支持代码：600519、000001、00700、AAPL
+                            </p>
                             <div class="d-flex align-items-center justify-content-between mb-4">
-                                <a href="../ticker">Search Ticker Value</a>
+                                <a href="../ticker">查看股票代码列表</a>
                             </div>
                             <button type="submit" class="btn btn-primary py-3 w-100 mb-4" onclick="LoadURL()">Predict</button>
                             <script type="text/javascript">
                                 function LoadURL() {
-                                    var ticker = document.getElementById("tickerinp").value;
-                                    var days = document.getElementById("days").value;
-                                    var server = window.location.origin;
-                                    var path = "/predict/" + ticker + "/" + days;
-                                    var url = server + path;
-                                    window.location.href = url;
+                                    var ticker = document.getElementById("tickerinp").value.trim();
+                                    var days = document.getElementById("days").value.trim();
+                                    if (!ticker || !days) return;
+                                    var path = "/predict/" + encodeURIComponent(ticker) + "/" + encodeURIComponent(days) + "/";
+                                    window.location.href = window.location.origin + path;
                                 }
+
+                                (function () {
+                                    var input = document.getElementById("tickerinp");
+                                    var box = document.getElementById("suggest-box");
+                                    var timer = null;
+
+                                    function hideBox() { box.style.display = "none"; box.innerHTML = ""; }
+
+                                    function renderItems(items) {
+                                        if (!items || !items.length) { hideBox(); return; }
+                                        box.innerHTML = items.map(function (item) {
+                                            return '<button type="button" class="dropdown-item text-white suggest-item" data-symbol="' +
+                                                item.symbol + '" style="display:block;width:100%;text-align:left;padding:8px 12px;background:transparent;border:0;">' +
+                                                item.symbol + ' · ' + item.name + ' <small class="text-muted">(' + item.market + ')</small></button>';
+                                        }).join("");
+                                        box.style.display = "block";
+                                        Array.prototype.forEach.call(box.querySelectorAll(".suggest-item"), function (btn) {
+                                            btn.addEventListener("click", function () {
+                                                input.value = btn.getAttribute("data-symbol");
+                                                hideBox();
+                                            });
+                                        });
+                                    }
+
+                                    input.addEventListener("input", function () {
+                                        var q = input.value.trim();
+                                        clearTimeout(timer);
+                                        if (q.length < 1) { hideBox(); return; }
+                                        timer = setTimeout(function () {
+                                            fetch("/api/suggest/?q=" + encodeURIComponent(q))
+                                                .then(function (r) { return r.json(); })
+                                                .then(function (data) { renderItems(data.items || []); })
+                                                .catch(function () { hideBox(); });
+                                        }, 250);
+                                    });
+
+                                    document.addEventListener("click", function (e) {
+                                        if (!box.contains(e.target) && e.target !== input) hideBox();
+                                    });
+                                })();
                             </script>
                         </div>
                     </div>

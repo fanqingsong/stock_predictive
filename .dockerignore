@@ -1,0 +1,13 @@
+.git
+.github
+.DS_Store
+virtualenv/
+**/__pycache__/
+*.pyc
+*.pyo
+db.sqlite3
+.env
+*.md
+LICENSE
+.gitattributes
+.gitignore
