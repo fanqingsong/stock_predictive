@@ -10,10 +10,14 @@ import torch
 from sklearn.preprocessing import StandardScaler
 from torch.utils.data import DataLoader, TensorDataset
 
-from .features import build_features, feature_column_names, make_sequences
+from .features import (
+    build_features,
+    feature_column_names,
+    make_sequences,
+    prepare_bars_with_benchmark,
+)
 from .lstm_model import StockLSTM
 from .metrics import compute_metrics
-from .resample import bars_for_timeframe
 from .storage import save_artifact
 from .timeframes import (
     DEFAULT_BATCH_SIZE,
@@ -55,6 +59,8 @@ def train_one_timeframe(
     market: str,
     ticker: str,
     timeframe: str,
+    benchmark_df,
+    benchmark_meta: Optional[Dict[str, Any]] = None,
     job_id: Optional[str] = None,
     epochs: int = DEFAULT_EPOCHS,
     batch_size: int = DEFAULT_BATCH_SIZE,
@@ -81,7 +87,9 @@ def train_one_timeframe(
             progress_cb(pct, f"[{cfg['label']}] {message}")
 
     report(5, "Building bars/features")
-    bars = bars_for_timeframe(history_df, timeframe, drop_incomplete=True)
+    bars = prepare_bars_with_benchmark(
+        history_df, benchmark_df, timeframe, drop_incomplete=True
+    )
     feat_df = build_features(bars, timeframe=timeframe, for_training=True)
     min_rows = lookback + int(cfg["min_extra_rows"])
     if len(feat_df) < min_rows:
@@ -218,6 +226,7 @@ def train_one_timeframe(
         "feature_version": FEATURE_VERSION,
         "feature_columns": feature_columns,
         "feature_windows": feature_windows,
+        "benchmark": benchmark_meta or {},
         "lookback": lookback,
         "input_size": len(feature_columns),
         "num_outputs": 1,
@@ -252,6 +261,8 @@ def train_lstm_on_history(
     *,
     market: str,
     ticker: str,
+    benchmark_df,
+    benchmark_meta: Optional[Dict[str, Any]] = None,
     job_id: Optional[str] = None,
     timeframes: Optional[List[str]] = None,
     progress_cb: ProgressCallback = None,
@@ -273,6 +284,8 @@ def train_lstm_on_history(
                 market=market,
                 ticker=ticker,
                 timeframe=tf,
+                benchmark_df=benchmark_df,
+                benchmark_meta=benchmark_meta,
                 job_id=job_id,
                 progress_cb=progress_cb,
                 progress_span=(lo, hi),
@@ -308,6 +321,7 @@ def train_lstm_on_history(
         "market": market,
         "feature_version": FEATURE_VERSION,
         "task_type": TASK_TYPE,
+        "benchmark": benchmark_meta or {},
         "by_timeframe": by_tf,
         "errors": errors,
         "metrics": (day_block.get("metrics") if day_block.get("status") == "ready" else {}),

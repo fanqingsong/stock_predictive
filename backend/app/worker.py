@@ -16,7 +16,7 @@ from app.ml import max_history_bars
 from app.ml.storage import _json_safe, ticker_dir
 from app.ml.trainer import train_lstm_on_history
 from app.models import StockModelArtifact, TrainJob
-from app.stock_data import ResolvedTicker, fetch_history
+from app.stock_data import ResolvedTicker, fetch_benchmark_history, fetch_history
 
 
 def claim_next_job(db: Session) -> Optional[TrainJob]:
@@ -65,10 +65,21 @@ def run_job(db: Session, job: TrainJob) -> None:
     if history is None or history.empty:
         raise ValueError(f"No history for {resolved.display}")
 
+    progress_cb(4, "Downloading benchmark")
+    benchmark, benchmark_history = fetch_benchmark_history(resolved.market, bars=bars)
+    benchmark_meta = {
+        "symbol": benchmark.display,
+        "name": benchmark.name or benchmark.display,
+        "market": benchmark.market,
+        "tencent_code": benchmark.tencent_code,
+    }
+
     meta, paths = train_lstm_on_history(
         history,
         market=resolved.market,
         ticker=resolved.display,
+        benchmark_df=benchmark_history,
+        benchmark_meta=benchmark_meta,
         job_id=str(job.id),
         progress_cb=progress_cb,
     )

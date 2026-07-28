@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 import torch
 
-from .features import build_features, feature_column_names
+from .features import build_features, feature_column_names, prepare_bars_with_benchmark
 from .resample import bars_for_timeframe
 from .storage import artifact_exists, load_artifact
 from .timeframes import TIMEFRAME_KEYS, timeframe_config
@@ -16,6 +16,10 @@ from .timeframes import TIMEFRAME_KEYS, timeframe_config
 
 def _device() -> torch.device:
     return torch.device("cpu")
+
+
+def _feature_dim(cfg: Dict[str, Any]) -> int:
+    return len(feature_column_names(cfg["feature_windows"]))
 
 
 def _series_from_bars(bars: pd.DataFrame, limit: int) -> List[Dict[str, Any]]:
@@ -92,8 +96,10 @@ def predict_one_timeframe(
     market: str,
     ticker: str,
     timeframe: str,
+    benchmark_df: pd.DataFrame,
 ) -> Dict[str, Any]:
     cfg = timeframe_config(timeframe)
+    n_features = _feature_dim(cfg)
     series_limit = {"day": 120, "week": 80, "month": 48}.get(timeframe, 60)
     bars = bars_for_timeframe(history_df, timeframe, drop_incomplete=True)
     series = _series_from_bars(bars, series_limit)
@@ -109,13 +115,13 @@ def predict_one_timeframe(
             "series": series,
             "architecture": {
                 "network": "StockLSTM",
-                "input_shape": f"(B, {cfg['lookback']}, 11)",
+                "input_shape": f"(B, {cfg['lookback']}, {n_features})",
                 "lookback": cfg["lookback"],
                 "hidden_size": cfg["hidden_size"],
                 "num_layers": cfg["num_layers"],
                 "dropout": cfg["dropout"],
                 "diagram": (
-                    f"x({cfg['lookback']}×11) → LSTM×{cfg['num_layers']}"
+                    f"x({cfg['lookback']}×{n_features}) → LSTM×{cfg['num_layers']}"
                     f"(h={cfg['hidden_size']}) → Linear(1)"
                 ),
                 "feature_columns": feature_column_names(cfg["feature_windows"]),
@@ -130,7 +136,10 @@ def predict_one_timeframe(
     )
     detail = _model_detail(meta, cfg)
 
-    feat_df = build_features(bars, timeframe=timeframe, for_training=False)
+    feat_bars = prepare_bars_with_benchmark(
+        history_df, benchmark_df, timeframe, drop_incomplete=True
+    )
+    feat_df = build_features(feat_bars, timeframe=timeframe, for_training=False)
     if len(feat_df) < lookback:
         return {
             "key": timeframe,
@@ -177,12 +186,15 @@ def predict_horizons(
     history_df: pd.DataFrame,
     market: str,
     ticker: str,
+    benchmark_df: pd.DataFrame,
 ) -> Tuple[List[Dict[str, Any]], dict]:
     """Run day/week/month predictors independently; combine metas."""
     results: List[Dict[str, Any]] = []
     metas: Dict[str, Any] = {}
     for tf in TIMEFRAME_KEYS:
-        item = predict_one_timeframe(history_df, market, ticker, tf)
+        item = predict_one_timeframe(
+            history_df, market, ticker, tf, benchmark_df=benchmark_df
+        )
         results.append(item)
         if artifact_exists(market, ticker, tf):
             try:

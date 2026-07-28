@@ -26,6 +26,7 @@ from ..schemas import (
 )
 from ..services.models_service import delete_ready_model, list_ready_models, market_label
 from ..stock_data import (
+    fetch_benchmark_history,
     fetch_history,
     fetch_multi_quotes,
     fetch_quote_info,
@@ -300,13 +301,16 @@ def api_predict(
         df = fetch_history(resolved, bars=max_history_bars())
         if df is None or df.empty:
             raise HTTPException(status_code=400, detail="invalid ticker or empty history")
+        _, benchmark_df = fetch_benchmark_history(resolved.market, bars=max_history_bars())
     except HTTPException:
         raise
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"market data unavailable: {exc}") from exc
 
     try:
-        horizons, meta = predict_horizons(df, resolved.market, resolved.display)
+        horizons, meta = predict_horizons(
+            df, resolved.market, resolved.display, benchmark_df=benchmark_df
+        )
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"forecast failed: {exc}") from exc
 

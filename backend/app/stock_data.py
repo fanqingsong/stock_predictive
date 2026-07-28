@@ -559,6 +559,37 @@ def fetch_history(resolved: ResolvedTicker, bars: int = 180) -> pd.DataFrame:
     return last_empty
 
 
+# Broad equity benchmarks used for relative / excess-return features.
+_BENCHMARK_BY_MARKET = {
+    "cn_sh": ResolvedTicker(
+        "000300", "cn_sh", "sh000300", "CNY", "上交所", "沪深300"
+    ),
+    "cn_sz": ResolvedTicker(
+        "000300", "cn_sh", "sh000300", "CNY", "上交所", "沪深300"
+    ),
+    "cn_hk": ResolvedTicker("HSI", "cn_hk", "hkHSI", "HKD", "港交所", "恒生指数"),
+    "us": ResolvedTicker("SPY", "us", None, "USD", "美股", "SPDR S&P 500 ETF"),
+}
+
+
+def resolve_benchmark(market: str) -> Optional[ResolvedTicker]:
+    """Return the broad-market benchmark ticker for a stock market key."""
+    return _BENCHMARK_BY_MARKET.get((market or "").lower())
+
+
+def fetch_benchmark_history(market: str, bars: int = 180) -> Tuple[ResolvedTicker, pd.DataFrame]:
+    """Fetch daily OHLCV for the market's benchmark index / ETF."""
+    benchmark = resolve_benchmark(market)
+    if benchmark is None:
+        raise ValueError(f"no benchmark configured for market={market}")
+    df = fetch_history(benchmark, bars=bars)
+    if df is None or df.empty:
+        raise ValueError(
+            f"empty benchmark history for {benchmark.name or benchmark.display} ({market})"
+        )
+    return benchmark, df
+
+
 def fetch_quote_info(resolved: ResolvedTicker) -> dict:
     defaults = {
         "Symbol": resolved.display,

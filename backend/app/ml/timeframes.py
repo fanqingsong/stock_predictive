@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, Tuple
 
-FEATURE_VERSION = "v5-scale"
+FEATURE_VERSION = "v6-scale"
 TASK_TYPE = "classification"
 TRAIN_RATIO = 0.8
 DEFAULT_EPOCHS = 60
