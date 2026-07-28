@@ -1,3 +1,9 @@
+# Development stack (hot reload) — one command:
+#   docker compose -f docker-compose.dev.yml up --build
+#
+# UI:  http://localhost:5173
+# API: http://localhost:8000/docs
+
 services:
   db:
     image: swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/postgres:15-alpine
@@ -24,7 +30,7 @@ services:
     container_name: stock_predictive_api
     restart: unless-stopped
     environment:
-      DEBUG: ${DEBUG:-False}
+      DEBUG: "True"
       SECRET_KEY: ${SECRET_KEY:-change-me-in-production-stock-predictive}
       POSTGRES_HOST: db
       POSTGRES_PORT: 5432
@@ -33,9 +39,22 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-stockpass}
       MODELS_STORE_DIR: /app/models_store
       DATA_DIR: /app/Data
-      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8080,http://localhost:5173}
+      CORS_ORIGINS: "*"
     volumes:
+      - ./backend:/app
       - models_volume:/app/models_store
+    ports:
+      - "${API_PORT:-8000}:8000"
+    command:
+      [
+        "uvicorn",
+        "app.main:app",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8000",
+        "--reload",
+      ]
     depends_on:
       db:
         condition: service_healthy
@@ -44,7 +63,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 12
-      start_period: 30s
+      start_period: 40s
     networks:
       - stock_net
 
@@ -54,9 +73,8 @@ services:
       dockerfile: Dockerfile
     container_name: stock_predictive_worker
     restart: unless-stopped
-    command: ["python", "-m", "app.worker", "--poll-interval", "2"]
     environment:
-      DEBUG: ${DEBUG:-False}
+      DEBUG: "True"
       SECRET_KEY: ${SECRET_KEY:-change-me-in-production-stock-predictive}
       POSTGRES_HOST: db
       POSTGRES_PORT: 5432
@@ -66,7 +84,22 @@ services:
       MODELS_STORE_DIR: /app/models_store
       DATA_DIR: /app/Data
     volumes:
+      - ./backend:/app
       - models_volume:/app/models_store
+    command:
+      [
+        "watchmedo",
+        "auto-restart",
+        "--directory=/app/app",
+        "--pattern=*.py",
+        "--recursive",
+        "--",
+        "python",
+        "-m",
+        "app.worker",
+        "--poll-interval",
+        "2",
+      ]
     depends_on:
       db:
         condition: service_healthy
@@ -78,13 +111,24 @@ services:
   frontend:
     build:
       context: ./frontend
-      dockerfile: Dockerfile
-      args:
-        VITE_API_BASE: ""
+      dockerfile: Dockerfile.dev
     container_name: stock_predictive_frontend
     restart: unless-stopped
+    environment:
+      VITE_API_PROXY: http://api:8000
+      # Must match the host-side published port so the browser WS connects correctly.
+      VITE_HMR_HOST: ${VITE_HMR_HOST:-localhost}
+      VITE_HMR_CLIENT_PORT: ${DEV_UI_PORT:-5173}
+      CHOKIDAR_USEPOLLING: "true"
+      WATCHPACK_POLLING: "true"
+    volumes:
+      - ./frontend:/app
+      - frontend_node_modules:/app/node_modules
+    # Use DEV_UI_PORT (default 5173). Do NOT reuse APP_PORT from prod .env (often 8080),
+    # otherwise Vite HMR websocket connects to the wrong port and UI won't live-update.
     ports:
-      - "${APP_PORT:-8080}:80"
+      - "${DEV_UI_PORT:-5173}:5173"
+    command: ["sh", "-c", "npm install --registry=https://registry.npmmirror.com && npm run dev -- --host 0.0.0.0 --port 5173"]
     depends_on:
       api:
         condition: service_healthy
@@ -94,6 +138,7 @@ services:
 volumes:
   postgres_data:
   models_volume:
+  frontend_node_modules:
 
 networks:
   stock_net:
